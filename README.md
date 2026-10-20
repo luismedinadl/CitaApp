@@ -34,6 +34,8 @@ flutter run --dart-define=API_URL=http://10.0.2.2:8080/api
 
 La conexión HTTP se habilita únicamente para esta prueba local. Antes de publicar la aplicación se debe usar una API con HTTPS.
 
+Para un celular físico, el celular y la computadora deben usar la misma red Wi-Fi. Inicia la API con `py backend/server.py --lan`, consulta la IPv4 de la computadora con `ipconfig` y usa esa dirección al compilar. Ejemplo: `--dart-define=API_URL=http://192.168.1.20:8080/api`.
+
 ## Administrador
 
 Antes de usar las opciones de administración, crea una cuenta de administrador:

@@ -184,5 +184,6 @@ if __name__ == '__main__':
             except sqlite3.IntegrityError:
                 raise SystemExit('Ese correo ya está registrado.')
         raise SystemExit('Administrador creado.')
-    print('API lista en http://127.0.0.1:8080/api')
-    ThreadingHTTPServer(('127.0.0.1', 8080), Handler).serve_forever()
+    host = '0.0.0.0' if len(sys.argv) == 2 and sys.argv[1] == '--lan' else '127.0.0.1'
+    print(f'API lista en http://{host}:8080/api')
+    ThreadingHTTPServer((host, 8080), Handler).serve_forever()
