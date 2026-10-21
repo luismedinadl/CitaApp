@@ -87,6 +87,22 @@ flutter build apk --release --dart-define=API_URL=https://TU_URL.trycloudflare.c
 
 La URL es temporal: deja abiertas la terminal de la API y la del túnel. Si cierras el túnel, al abrirlo otra vez recibirás una URL diferente y tendrás que crear otro APK. Es solo para pruebas: cualquiera que conozca la URL puede intentar conectarse a la API.
 
+### Publicar la API en Render
+
+Para que la aplicación funcione aunque la computadora esté apagada, se puede publicar la API en Render:
+
+1. Entra a [Render](https://render.com/) e inicia sesión con GitHub.
+2. Elige **New +** → **Blueprint** y selecciona el repositorio `luismedinadl/CitaApp`.
+3. Render leerá el archivo `render.yaml`. En `GOOGLE_CLIENT_ID`, pega el Client ID web de Google.
+4. Al terminar, Render mostrará una URL similar a `https://citaapp-api.onrender.com`.
+5. Crea un APK nuevo usando esa URL:
+
+```powershell
+flutter build apk --release --dart-define=API_URL=https://citaapp-api.onrender.com/api --dart-define=GOOGLE_CLIENT_ID=TU_CLIENT_ID.apps.googleusercontent.com
+```
+
+La base SQLite es adecuada para la demostración. En un proyecto real, se debe usar una base de datos administrada para conservar la información aun después de reinicios o nuevas publicaciones.
+
 ## Administrador
 
 Antes de usar las opciones de administración, crea una cuenta de administrador:

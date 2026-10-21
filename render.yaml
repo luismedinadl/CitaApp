@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: citaapp-api
+    runtime: python
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: python backend/server.py --lan
+    envVars:
+      - key: GOOGLE_CLIENT_ID
+        sync: false

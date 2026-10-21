@@ -243,6 +243,8 @@ if __name__ == '__main__':
             except sqlite3.IntegrityError:
                 raise SystemExit('Ese correo ya está registrado.')
         raise SystemExit('Administrador creado.')
-    host = '0.0.0.0' if len(sys.argv) == 2 and sys.argv[1] == '--lan' else '127.0.0.1'
-    print(f'API lista en http://{host}:8080/api')
-    ThreadingHTTPServer((host, 8080), Handler).serve_forever()
+    port = int(os.environ.get('PORT', '8080'))
+    # Render proporciona PORT y necesita escuchar conexiones externas.
+    host = '0.0.0.0' if '--lan' in sys.argv or 'PORT' in os.environ else '127.0.0.1'
+    print(f'API lista en http://{host}:{port}/api')
+    ThreadingHTTPServer((host, port), Handler).serve_forever()
