@@ -1,18 +1,29 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'api.dart';
+import 'google_auth.dart';
+import 'google_button.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   const value = String.fromEnvironment('API_URL');
   final url = value.isNotEmpty ? value :
       (!kIsWeb && defaultTargetPlatform == TargetPlatform.android
           ? 'http://10.0.2.2:8080/api' : 'http://127.0.0.1:8080/api');
-  runApp(CitaApp(api: Api(url)));
+  final google = GoogleAuth();
+  try {
+    await google.initialize();
+  } catch (_) {
+    // La pantalla mostrará un mensaje claro si falta la configuración de Google.
+  }
+  runApp(CitaApp(api: Api(url), google: google));
 }
 
 class CitaApp extends StatefulWidget {
   final Api api;
-  const CitaApp({super.key, required this.api});
+  final GoogleAuth google;
+  const CitaApp({super.key, required this.api, required this.google});
   @override State<CitaApp> createState() => _CitaAppState();
 }
 
@@ -23,19 +34,20 @@ class _CitaAppState extends State<CitaApp> {
     title: 'CitaApp', debugShowCheckedModeBanner: false,
     theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.teal,
       inputDecorationTheme: const InputDecorationTheme(border: OutlineInputBorder())),
-    home: user == null ? LoginPage(api: widget.api, onLogin: (u) => setState(() => user = u))
+    home: user == null ? LoginPage(api: widget.api, google: widget.google, onLogin: (u) => setState(() => user = u))
         : HomePage(api: widget.api, user: user!, onLogout: () => setState(() => user = null)),
   );
 }
 
-String errorText(Object error) => error is ApiError ? error.message : 'Ocurrió un error. Intenta nuevamente.';
+String errorText(Object error) => error is ApiError ? error.message : error is StateError ? error.message : 'Ocurrió un error. Intenta nuevamente.';
 void snack(BuildContext c, String text) => ScaffoldMessenger.of(c).showSnackBar(SnackBar(content: Text(text)));
 String ymd(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
 class LoginPage extends StatefulWidget {
   final Api api;
+  final GoogleAuth google;
   final ValueChanged<Map<String, dynamic>> onLogin;
-  const LoginPage({super.key, required this.api, required this.onLogin});
+  const LoginPage({super.key, required this.api, required this.google, required this.onLogin});
   @override State<LoginPage> createState() => _LoginPageState();
 }
 
@@ -45,7 +57,14 @@ class _LoginPageState extends State<LoginPage> {
   final password = TextEditingController();
   bool register = false, loading = false;
   String? error;
-  @override void dispose() { name.dispose(); email.dispose(); password.dispose(); super.dispose(); }
+  late final StreamSubscription<String> googleTokens;
+  @override void initState() {
+    super.initState();
+    googleTokens = widget.google.webTokens.listen(loginWithGoogle, onError: (e) {
+      if (mounted) setState(() => error = 'No se pudo iniciar sesión con Google.');
+    });
+  }
+  @override void dispose() { googleTokens.cancel(); name.dispose(); email.dispose(); password.dispose(); super.dispose(); }
   Future<void> submit() async {
     setState(() { loading = true; error = null; });
     try {
@@ -54,6 +73,16 @@ class _LoginPageState extends State<LoginPage> {
       if (mounted) widget.onLogin(user);
     } catch (e) { if (mounted) setState(() => error = errorText(e)); }
     finally { if (mounted) setState(() => loading = false); }
+  }
+  Future<void> loginWithGoogle([String? token]) async {
+    setState(() { loading = true; error = null; });
+    try {
+      final googleToken = token ?? await widget.google.signInOnAndroid();
+      final user = await widget.api.loginWithGoogle(googleToken);
+      if (mounted) widget.onLogin(user);
+    } catch (e) {
+      if (mounted) setState(() => error = errorText(e));
+    } finally { if (mounted) setState(() => loading = false); }
   }
   @override Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('CitaApp')),
@@ -67,6 +96,10 @@ class _LoginPageState extends State<LoginPage> {
       FilledButton(onPressed: loading ? null : submit, child: Text(loading ? 'Conectando...' : register ? 'Registrarme' : 'Entrar')),
       TextButton(onPressed: loading ? null : () => setState(() { register = !register; error = null; }),
           child: Text(register ? 'Ya tengo cuenta' : 'Crear una cuenta')),
+      const Divider(height: 32),
+      if (!widget.google.configured) const Text('El acceso con Google se activará al configurar GOOGLE_CLIENT_ID.', textAlign: TextAlign.center)
+      else if (kIsWeb) const GoogleButton()
+      else OutlinedButton.icon(onPressed: loading ? null : loginWithGoogle, icon: const Icon(Icons.account_circle), label: const Text('Continuar con Google')),
     ]))),
   );
 }

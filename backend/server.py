@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import json
 import getpass
+import os
 import secrets
 import sqlite3
 import urllib.error
@@ -12,9 +13,23 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+try:
+    from google.auth.transport import requests as google_requests
+    from google.oauth2 import id_token as google_id_token
+except ImportError:
+    google_requests = None
+    google_id_token = None
+
 ROOT = Path(__file__).parent
 DB = ROOT / 'citaapp.db'
 SESSIONS = {}
+GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID', '')
+
+class AuthenticationError(PermissionError):
+    pass
+
+class ServerConfigError(RuntimeError):
+    pass
 
 class Connection(sqlite3.Connection):
     def __exit__(self, *args):
@@ -47,6 +62,10 @@ def setup():
         INSERT OR IGNORE INTO settings VALUES('start','09:00');
         INSERT OR IGNORE INTO settings VALUES('end','18:00');
         ''')
+        columns = [row['name'] for row in db.execute('PRAGMA table_info(users)')]
+        if 'google_sub' not in columns:
+            db.execute('ALTER TABLE users ADD COLUMN google_sub TEXT')
+        db.execute('CREATE UNIQUE INDEX IF NOT EXISTS users_google_sub ON users(google_sub) WHERE google_sub IS NOT NULL')
         if not db.execute('SELECT id FROM services').fetchone():
             db.executemany('INSERT INTO services(name,duration,price) VALUES(?,?,?)', [
                 ('Corte de cabello', 30, 150), ('Arreglo de barba', 30, 100), ('Corte y barba', 60, 230)])
@@ -54,7 +73,7 @@ def setup():
 def get_user(headers, admin=False):
     token = headers.get('Authorization', '').removeprefix('Bearer ')
     user_id = SESSIONS.get(token)
-    if not user_id: raise ValueError('Inicia sesión nuevamente.')
+    if not user_id: raise AuthenticationError('Inicia sesión nuevamente.')
     with conn() as db:
         user = db.execute('SELECT id,name,email,role FROM users WHERE id=?', (user_id,)).fetchone()
     if not user or (admin and user['role'] != 'admin'): raise PermissionError('No tienes permiso para esta acción.')
@@ -68,6 +87,26 @@ def is_holiday(day):
             return any(item.get('date') == day.isoformat() for item in json.load(response))
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
         return False
+
+def google_user(token):
+    """Valida el token con Google antes de crear nuestra sesión."""
+    if not GOOGLE_CLIENT_ID:
+        raise ServerConfigError('Falta configurar GOOGLE_CLIENT_ID en la API.')
+    if not google_id_token or not google_requests:
+        raise ServerConfigError('Instala las dependencias: py -m pip install -r backend/requirements.txt')
+    try:
+        info = google_id_token.verify_oauth2_token(
+            token, google_requests.Request(), GOOGLE_CLIENT_ID)
+    except Exception as error:
+        print(f'Error al validar Google: {error}')
+        raise AuthenticationError('Google no pudo validar este acceso.') from error
+    if info.get('iss') not in ('accounts.google.com', 'https://accounts.google.com'):
+        raise AuthenticationError('El acceso de Google no es válido.')
+    email = str(info.get('email', '')).strip().lower()
+    sub = str(info.get('sub', '')).strip()
+    if not sub or '@' not in email or not info.get('email_verified'):
+        raise AuthenticationError('Google no proporcionó un correo verificado.')
+    return sub, email, str(info.get('name', '')).strip()
 
 def slots(service_id, day):
     try: day = date.fromisoformat(day)
@@ -126,11 +165,29 @@ class Handler(BaseHTTPRequestHandler):
                         except sqlite3.IntegrityError: raise ValueError('Este correo ya está registrado.')
                     else:
                         user = db.execute('SELECT * FROM users WHERE email=?', (email,)).fetchone()
-                        if not user or not valid_password(password, user['password']): raise PermissionError('Correo o contraseña incorrectos.')
+                        if not user or not user['password'] or not valid_password(password, user['password']): raise AuthenticationError('Correo o contraseña incorrectos.')
                         id = user['id']
                     user = db.execute('SELECT id,name,email,role FROM users WHERE id=?', (id,)).fetchone()
                 token = secrets.token_urlsafe(24); SESSIONS[token] = id
                 return self.respond(201 if path.endswith('register') else 200, {'token': token, 'user': dict(user)})
+            if path == '/api/auth/google' and self.command == 'POST':
+                token = str(self.body().get('id_token', ''))
+                if not token: raise ValueError('Falta el token de Google.')
+                sub, email, name = google_user(token)
+                with conn() as db:
+                    user = db.execute('SELECT id,name,email,role FROM users WHERE google_sub=?', (sub,)).fetchone()
+                    if not user:
+                        # Si ya existe una cuenta con el mismo correo verificado, la enlaza.
+                        user = db.execute('SELECT id,name,email,role FROM users WHERE email=?', (email,)).fetchone()
+                        if user:
+                            db.execute('UPDATE users SET google_sub=? WHERE id=?', (sub, user['id']))
+                        else:
+                            display_name = name or email.split('@')[0]
+                            user_id = db.execute('INSERT INTO users(name,email,password,role,google_sub) VALUES(?,?,?,?,?)',
+                                (display_name, email, None, 'client', sub)).lastrowid
+                            user = db.execute('SELECT id,name,email,role FROM users WHERE id=?', (user_id,)).fetchone()
+                session = secrets.token_urlsafe(24); SESSIONS[session] = user['id']
+                return self.respond(200, {'token': session, 'user': dict(user)})
             if path == '/api/appointments' and self.command == 'GET':
                 user = get_user(self.headers)
                 with conn() as db: rows = db.execute('''SELECT a.id,s.name service,a.date,a.time,u.name client,a.status FROM appointments a JOIN services s ON s.id=a.service_id JOIN users u ON u.id=a.user_id WHERE a.user_id=? ORDER BY a.date,a.time''',(user['id'],)).fetchall()
@@ -164,7 +221,9 @@ class Handler(BaseHTTPRequestHandler):
                 with conn() as db: db.execute("UPDATE settings SET value=? WHERE key='start'",(start,)); db.execute("UPDATE settings SET value=? WHERE key='end'",(end,))
                 return self.respond(200, {'message':'Horario guardado.'})
             return self.respond(404, {'error':'Recurso no encontrado.'})
-        except PermissionError as e: self.respond(401 if 'sesión' in str(e) or 'incorrectos' in str(e) else 403, {'error':str(e)})
+        except AuthenticationError as e: self.respond(401, {'error':str(e)})
+        except PermissionError as e: self.respond(403, {'error':str(e)})
+        except ServerConfigError as e: self.respond(503, {'error':str(e)})
         except (ValueError, TypeError) as e: self.respond(400, {'error':str(e)})
         except LookupError as e: self.respond(404, {'error':str(e)})
         except Exception: self.respond(500, {'error':'Error interno del servidor.'})

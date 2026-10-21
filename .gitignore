@@ -47,6 +47,10 @@ app.*.map.json
 # Datos locales de CitaApp
 /backend/citaapp.db
 /backend/test.db
+/backend/.env
+
+# Herramienta descargada para el túnel temporal
+/tools/cloudflared.exe
 
 # Widget Preview related
 .widget_preview/

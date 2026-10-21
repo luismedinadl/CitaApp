@@ -66,3 +66,8 @@ Después de ejecutar el proyecto, agrega capturas de: servicios cargados, horari
 ## Conclusión
 
 La API permite que CitaApp consulte información y guarde las citas. Los datos recibidos se muestran dentro de las pantallas de la aplicación y los mensajes de error ayudan al usuario cuando la conexión o el servidor fallan.
+## Inicio con Google
+
+La aplicación envía a la API un `id_token` de Google mediante `POST /api/auth/google`. La API valida ese token con Google, revisa que el correo esté verificado y crea una sesión propia de CitaApp. No guarda la contraseña de Google.
+
+La ruta pide que la variable `GOOGLE_CLIENT_ID` esté configurada y que `google-auth` esté instalado con `py -m pip install -r backend/requirements.txt`.
