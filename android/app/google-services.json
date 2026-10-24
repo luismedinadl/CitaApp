@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "372221592179",
+    "project_id": "citaapp-8d89f",
+    "storage_bucket": "citaapp-8d89f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:372221592179:android:aae5311cfa3148f57ae006",
+        "android_client_info": {
+          "package_name": "com.example.citaapp"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "372221592179-kk7ol73nf6b92jpnnhg1f0f9nldskeph.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDSdxTOqWPK2QlT98QTka1qqeh_S-78V9k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "372221592179-kk7ol73nf6b92jpnnhg1f0f9nldskeph.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
