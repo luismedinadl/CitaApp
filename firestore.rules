@@ -1,0 +1,45 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function connected() {
+      return request.auth != null;
+    }
+
+    function administrator() {
+      return connected()
+          && request.auth.token.email == 'admin@citaapp.com';
+    }
+
+    match /services/{serviceId} {
+      allow read: if connected();
+      allow create, update, delete: if administrator();
+    }
+
+    match /settings/business {
+      allow read: if connected();
+      allow create, update: if administrator();
+    }
+
+    match /availability/{availabilityId} {
+      allow read: if connected();
+      allow create: if connected()
+          && request.resource.data.userId == request.auth.uid;
+      allow delete: if connected()
+          && resource.data.userId == request.auth.uid;
+    }
+
+    match /appointments/{appointmentId} {
+      allow create: if connected()
+          && request.resource.data.userId == request.auth.uid;
+      allow read: if connected()
+          && (resource.data.userId == request.auth.uid || administrator());
+      allow update: if connected()
+          && resource.data.userId == request.auth.uid
+          && request.resource.data.userId == resource.data.userId
+          && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['status'])
+          && request.resource.data.status == 'cancelada';
+    }
+  }
+}

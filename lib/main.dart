@@ -1,12 +1,25 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'api.dart';
+import 'holiday_api.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
+  await Firebase.initializeApp(
+    options: kIsWeb
+        ? const FirebaseOptions(
+            apiKey: 'AIzaSyA00liQYXwyKbEbR49DQ-cZB5JXJFgdBNA',
+            appId: '1:372221592179:web:485b15cbb9c961987ae006',
+            messagingSenderId: '372221592179',
+            projectId: 'citaapp-8d89f',
+            authDomain: 'citaapp-8d89f.firebaseapp.com',
+            storageBucket: 'citaapp-8d89f.firebasestorage.app',
+          )
+        : null,
+  );
   runApp(CitaApp(api: Api()));
 }
 
@@ -614,6 +627,7 @@ class BookingPage extends StatefulWidget {
 class _BookingPageState extends State<BookingPage> {
   DateTime selected = DateTime.now();
   List<String> slots = [];
+  Holiday? holiday;
   String? time;
   String? error;
   bool loading = true;
@@ -629,9 +643,12 @@ class _BookingPageState extends State<BookingPage> {
       loading = true;
       time = null;
       error = null;
+      holiday = null;
     });
     try {
-      slots = await widget.api.slots(widget.service, ymd(selected));
+      final result = await widget.api.slots(widget.service, ymd(selected));
+      slots = result.slots;
+      holiday = result.holiday;
     } catch (e) {
       error = errorText(e);
     }
@@ -666,7 +683,15 @@ class _BookingPageState extends State<BookingPage> {
           Text(error!),
           TextButton(onPressed: load, child: const Text('Reintentar')),
         ] else ...[
-          if (slots.isEmpty)
+          if (holiday != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Text(
+                'No hay citas disponibles: ${holiday!.visibleName}.\n'
+                'La fecha fue validada con la API pública Nager.Date.',
+              ),
+            )
+          else if (slots.isEmpty)
             const Text('No hay horarios disponibles en esta fecha.'),
           Wrap(
             spacing: 8,

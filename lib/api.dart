@@ -3,6 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
+import 'holiday_api.dart';
+
 class ApiError implements Exception {
   final String message;
   ApiError(this.message);
@@ -59,6 +61,13 @@ class Appointment {
   }
 }
 
+class SlotsResult {
+  final List<String> slots;
+  final Holiday? holiday;
+
+  const SlotsResult(this.slots, {this.holiday});
+}
+
 /// Conserva el nombre Api para que la interfaz siga siendo sencilla. Ahora
 /// guarda los datos directamente en Firebase, sin depender de un servidor local.
 class Api {
@@ -68,6 +77,7 @@ class Api {
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final NagerDateApi _holidays = NagerDateApi();
   bool _googleReady = false;
 
   Stream<User?> get authChanges => _auth.authStateChanges();
@@ -155,7 +165,13 @@ class Api {
     return list;
   }
 
-  Future<List<String>> slots(Service service, String date) async {
+  Future<SlotsResult> slots(Service service, String date) async {
+    try {
+      final holiday = await _holidays.holidayOn(date);
+      if (holiday != null) return SlotsResult(const [], holiday: holiday);
+    } on HolidayApiException catch (error) {
+      throw ApiError(error.message);
+    }
     final business = await _db.collection('settings').doc('business').get();
     final data = business.data() ?? {};
     final start = data['start'] as String? ?? '09:00';
@@ -187,14 +203,19 @@ class Api {
       );
       if (!overlaps) available.add(_clock(minute));
     }
-    return available;
+    return SlotsResult(available);
   }
 
   Future<void> reserve(Service service, String date, String time) async {
     final user = _auth.currentUser;
     if (user == null) throw ApiError('Inicia sesión nuevamente.');
     final currentSlots = await slots(service, date);
-    if (!currentSlots.contains(time))
+    if (currentSlots.holiday != null) {
+      throw ApiError(
+        'No se pueden reservar citas en ${currentSlots.holiday!.visibleName}.',
+      );
+    }
+    if (!currentSlots.slots.contains(time))
       throw ApiError('Ese horario ya no está disponible.');
     final profile = userData(user);
     final appointment = _db.collection('appointments').doc();
